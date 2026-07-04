@@ -368,8 +368,8 @@ class StockAnalyzerApp:
                 )
                 combo.grid(row=row, column=1, pady=5, padx=5)
                 param_vars[key] = (var, index_options)
-            elif key in ("window", "ma_window"):
-                # Use dropdown for window/ma_window
+            elif key == "window":
+                # Use dropdown for window (includes 30天 for amplitude calculation)
                 var = tk.StringVar()
                 current_display = window_display_to_value.get(val, "20天")
                 var.set(current_display)
@@ -382,6 +382,20 @@ class StockAnalyzerApp:
                 )
                 combo.grid(row=row, column=1, pady=5, padx=5)
                 param_vars[key] = (var, window_options)
+            elif key == "ma_window":
+                # Use dropdown for ma_window (no 30天, only MA periods we calculate)
+                var = tk.StringVar()
+                current_display = ma_period_display_to_value.get(val, "20天")
+                var.set(current_display)
+                combo = ttk.Combobox(
+                    frame, 
+                    textvariable=var, 
+                    values=list(ma_period_options.keys()),
+                    state="readonly",
+                    width=18
+                )
+                combo.grid(row=row, column=1, pady=5, padx=5)
+                param_vars[key] = (var, ma_period_options)
             elif key == "golden_mode":
                 # Use dropdown for golden_mode
                 var = tk.StringVar()
