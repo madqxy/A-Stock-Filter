@@ -327,13 +327,36 @@ class StockAnalyzerApp:
         }
         window_display_to_value = {v: k for k, v in window_options.items()}
         
+        # Golden mode options for dropdown
+        golden_mode_options = {
+            "双金叉": "both",
+            "单金叉": "either",
+        }
+        golden_mode_display_to_value = {v: k for k, v in golden_mode_options.items()}
+        
+        # Boolean options for dropdown
+        bool_options = {
+            "是": True,
+            "否": False,
+        }
+        bool_display_to_value = {v: k for k, v in bool_options.items()}
+        
+        # MA period options for dropdown (only periods we actually calculate)
+        ma_period_options = {
+            "5天": 5,
+            "10天": 10,
+            "20天": 20,
+            "60天": 60,
+            "120天": 120,
+        }
+        ma_period_display_to_value = {v: k for k, v in ma_period_options.items()}
+        
         for key, val in editable_params.items():
             ttk.Label(frame, text=self._param_label(key)).grid(row=row, column=0, sticky=tk.W, pady=5)
             
             if key == "vs_index":
                 # Use dropdown for vs_index
                 var = tk.StringVar()
-                # Find display name for current value
                 current_display = index_display_to_key.get(val, "沪深300")
                 var.set(current_display)
                 combo = ttk.Combobox(
@@ -344,11 +367,10 @@ class StockAnalyzerApp:
                     width=18
                 )
                 combo.grid(row=row, column=1, pady=5, padx=5)
-                param_vars[key] = (var, index_options)  # Store mapping
-            elif key == "window":
-                # Use dropdown for window
+                param_vars[key] = (var, index_options)
+            elif key in ("window", "ma_window"):
+                # Use dropdown for window/ma_window
                 var = tk.StringVar()
-                # Find display name for current value
                 current_display = window_display_to_value.get(val, "20天")
                 var.set(current_display)
                 combo = ttk.Combobox(
@@ -359,9 +381,51 @@ class StockAnalyzerApp:
                     width=18
                 )
                 combo.grid(row=row, column=1, pady=5, padx=5)
-                param_vars[key] = (var, window_options)  # Store mapping
+                param_vars[key] = (var, window_options)
+            elif key == "golden_mode":
+                # Use dropdown for golden_mode
+                var = tk.StringVar()
+                current_display = golden_mode_display_to_value.get(val, "双金叉")
+                var.set(current_display)
+                combo = ttk.Combobox(
+                    frame, 
+                    textvariable=var, 
+                    values=list(golden_mode_options.keys()),
+                    state="readonly",
+                    width=18
+                )
+                combo.grid(row=row, column=1, pady=5, padx=5)
+                param_vars[key] = (var, golden_mode_options)
+            elif key == "require_downtrend":
+                # Use dropdown for boolean
+                var = tk.StringVar()
+                current_display = bool_display_to_value.get(val, "否")
+                var.set(current_display)
+                combo = ttk.Combobox(
+                    frame, 
+                    textvariable=var, 
+                    values=list(bool_options.keys()),
+                    state="readonly",
+                    width=18
+                )
+                combo.grid(row=row, column=1, pady=5, padx=5)
+                param_vars[key] = (var, bool_options)
+            elif key in ("ma_short", "ma_medium", "ma_long"):
+                # Use dropdown for MA periods
+                var = tk.StringVar()
+                current_display = ma_period_display_to_value.get(val, "20天")
+                var.set(current_display)
+                combo = ttk.Combobox(
+                    frame, 
+                    textvariable=var, 
+                    values=list(ma_period_options.keys()),
+                    state="readonly",
+                    width=18
+                )
+                combo.grid(row=row, column=1, pady=5, padx=5)
+                param_vars[key] = (var, ma_period_options)
             else:
-                # Use text entry for other parameters
+                # Use text entry for numeric parameters
                 var = tk.StringVar(value=str(val))
                 entry = ttk.Entry(frame, textvariable=var, width=20)
                 entry.grid(row=row, column=1, pady=5, padx=5)
@@ -376,17 +440,14 @@ class StockAnalyzerApp:
             # Save custom parameters
             custom = {"type": ftype}
             for key, var_data in param_vars.items():
-                if key == "vs_index":
-                    var, mapping = var_data
-                    display_name = var.get()
-                    custom[key] = mapping[display_name]
-                elif key == "window":
+                if isinstance(var_data, tuple):
+                    # Dropdown with mapping
                     var, mapping = var_data
                     display_name = var.get()
                     custom[key] = mapping[display_name]
                 else:
+                    # Text entry for numeric values
                     val = var_data.get()
-                    # Try to convert to appropriate type
                     try:
                         if "." in val:
                             custom[key] = float(val)
@@ -415,6 +476,10 @@ class StockAnalyzerApp:
             "ma_medium": "中期均线(天)",
             "ma_long": "长期均线(天)",
             "vs_index": "对比基准",
+            "fluctuation_pct": "波幅上限(%)",
+            "volume_ratio": "缩量倍数",
+            "golden_mode": "金叉模式",
+            "require_downtrend": "要求下跌趋势",
         }
         return labels.get(key, key)
 

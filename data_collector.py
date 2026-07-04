@@ -299,11 +299,12 @@ def compute_indicators(
     for done in range(total):
         code = rt_codes[done]
         kl = kline_map.get(code)
-        ma5 = ma20 = ma60 = ma120 = None
+        ma5 = ma10 = ma20 = ma60 = ma120 = None
         vol_5d = vol_30d = None
         to_5_max = to_5_min = to_10_max = to_10_min = None
         to_20_max = to_20_min = to_30_max = to_30_min = None
         to_60_max = to_60_min = None
+        amp_5_max = amp_10_max = amp_20_max = amp_30_max = amp_60_max = None
         kdj_gc = macd_gc = False
 
         if kl is not None and not kl.empty:
@@ -313,6 +314,7 @@ def compute_indicators(
             n = closes.size
 
             if n >= 5:   ma5   = round(float(closes[-5:].mean()), 2)
+            if n >= 10:  ma10  = round(float(closes[-10:].mean()), 2)
             if n >= 20:  ma20  = round(float(closes[-20:].mean()), 2)
             if n >= 60:  ma60  = round(float(closes[-60:].mean()), 2)
             if n >= 120: ma120 = round(float(closes[-120:].mean()), 2)
@@ -362,6 +364,20 @@ def compute_indicators(
                     to_60_max = round(float(to_values[-60:].max()), 2)
                     to_60_min = round(float(to_values[-60:].min()), 2)
 
+            # N日最大日波幅 (每日涨跌幅的绝对值的最大值)
+            if n >= 2:
+                daily_ret = np.abs(np.diff(closes) / closes[:-1] * 100)
+                if n >= 6:
+                    amp_5_max = round(float(daily_ret[-5:].max()), 2)
+                if n >= 11:
+                    amp_10_max = round(float(daily_ret[-10:].max()), 2)
+                if n >= 21:
+                    amp_20_max = round(float(daily_ret[-20:].max()), 2)
+                if n >= 31:
+                    amp_30_max = round(float(daily_ret[-30:].max()), 2)
+                if n >= 61:
+                    amp_60_max = round(float(daily_ret[-60:].max()), 2)
+
             if "high" in kl.columns and "low" in kl.columns:
                 highs = kl["high"].to_numpy(dtype=float)
                 lows = kl["low"].to_numpy(dtype=float)
@@ -401,6 +417,7 @@ def compute_indicators(
             "最新价": float(rt_prices[done]) if pd.notna(rt_prices[done]) else None,
             "涨跌幅": float(rt_changes[done]) if pd.notna(rt_changes[done]) else None,
             "5日均价": ma5,
+            "10日均价": ma10,
             "20日均价": ma20,
             "60日均价": ma60,
             "120日均价": ma120,
@@ -421,6 +438,11 @@ def compute_indicators(
             "30日最低换手率": to_30_min,
             "60日最高换手率": to_60_max,
             "60日最低换手率": to_60_min,
+            "5日最大日波幅": amp_5_max,
+            "10日最大日波幅": amp_10_max,
+            "20日最大日波幅": amp_20_max,
+            "30日最大日波幅": amp_30_max,
+            "60日最大日波幅": amp_60_max,
             "KDJ金叉": kdj_gc,
             "MACD金叉": macd_gc,
         })
@@ -763,12 +785,13 @@ def run_pipeline(
     for _, ir in index_quotes.iterrows():
         icode = ir["代码"]
         ikl = idx_kline_map.get(icode)
-        ma5 = ma20 = ma60 = ma120 = None
+        ma5 = ma10 = ma20 = ma60 = ma120 = None
         kdj_gc = macd_gc = False
         if ikl is not None and not ikl.empty:
             closes = ikl["close"].to_numpy(dtype=float)
             n = closes.size
             if n >= 5:   ma5   = round(float(closes[-5:].mean()), 2)
+            if n >= 10:  ma10  = round(float(closes[-10:].mean()), 2)
             if n >= 20:  ma20  = round(float(closes[-20:].mean()), 2)
             if n >= 60:  ma60  = round(float(closes[-60:].mean()), 2)
             if n >= 120: ma120 = round(float(closes[-120:].mean()), 2)
@@ -783,7 +806,7 @@ def run_pipeline(
         index_rows.append({
             "代码": icode, "名称": ir["名称"], "最新价": ir["最新价"],
             "涨跌幅": ir["涨跌幅"],
-            "5日均价": ma5, "20日均价": ma20, "60日均价": ma60, "120日均价": ma120,
+            "5日均价": ma5, "10日均价": ma10, "20日均价": ma20, "60日均价": ma60, "120日均价": ma120,
             "市盈率": None, "市盈率(TTM)": None, "市值(亿)": None,
             "最新成交量(万手)": None, "最新换手率": None,
             "5日平均成交量(万手)": None, "5日最高换手率": None, "5日最低换手率": None,

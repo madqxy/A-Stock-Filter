@@ -54,6 +54,8 @@ def _run_cli():
     parser.add_argument("--ma-medium", type=int, help="中期均线天数 (如 20)")
     parser.add_argument("--ma-long", type=int, help="长期均线天数 (如 60)")
     parser.add_argument("--vs-index", type=str, help="对比基准 (csi300, csi1000, sh000001, sz399001)")
+    parser.add_argument("--fluctuation-pct", type=float, help="波幅上限%% (如 3.0)")
+    parser.add_argument("--volume-ratio", type=float, help="缩量倍数 (如 0.8, 最新量/均量)")
     
     args = parser.parse_args()
 
@@ -133,6 +135,10 @@ def _run_cli():
         default_criteria["ma_long"] = args.ma_long
     if args.vs_index is not None:
         default_criteria["vs_index"] = args.vs_index
+    if args.fluctuation_pct is not None:
+        default_criteria["fluctuation_pct"] = args.fluctuation_pct
+    if args.volume_ratio is not None:
+        default_criteria["volume_ratio"] = args.volume_ratio
     
     print(f"\n[筛选] {filter_type}")
     filtered = filter_stocks(result["all_data"], default_criteria)
