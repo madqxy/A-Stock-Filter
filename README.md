@@ -58,7 +58,7 @@ python main.py --cli --volume-multiplier 1.8 --pe-max 180 --vs-index csi1000
 | **均线多头排列** | MA短期 > MA中期 > MA长期, 跑赢大盘 | 短/中/长期均线天数, 对比基准 |
 | **放量突破** | 价>MA, 量>N倍均量, 跑赢大盘 | 放量倍数, 均线周期, 对比基准 |
 | **止跌缩量** | 盈利(PE>0且<上限), 止跌(N日波幅<阈值), 缩量(量<倍数×均量), 可选要求下跌趋势 | 市盈率上限, 均线周期, 时间窗口, 波幅上限, 缩量倍数, 要求下跌趋势(是/否) |
-| **止涨放量下跌** | MA5<MA(止涨), 价<MA, 跌幅<0, 量>N倍均量(放量下跌) | 放量倍数, 均线周期 |
+| **止涨放量下跌** | KDJ/MACD死叉(见顶), 价<MA, 跌幅<0, 量>N倍均量(放量下跌) | 放量倍数, 均线周期 |
 
 **对比基准选项**: 沪深300, 中证500, 中证1000, 上证指数, 深证成指, 科创50, 创业板指数
 
@@ -76,7 +76,7 @@ python main.py --cli --volume-multiplier 1.8 --pe-max 180 --vs-index csi1000
 | `5/10日换手率(高/低)` | Turnover rate extremes (displayed) |
 | `20/30/60日最高换手率`, `20/30/60日最低换手率` | Turnover rate extremes (computed, for filtering) |
 | `5/10/20/30/60日最大日波幅` | Max daily amplitude (computed, for filtering, hidden from display) |
-| `KDJ金叉`, `MACD金叉` | Golden cross signals (bool) |
+| `KDJ金叉`, `MACD金叉`, `KDJ死叉`, `MACD死叉` | Golden/death cross signals (bool) |
 
 ## Architecture
 

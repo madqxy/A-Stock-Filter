@@ -306,6 +306,7 @@ def compute_indicators(
         to_60_max = to_60_min = None
         amp_5_max = amp_10_max = amp_20_max = amp_30_max = amp_60_max = None
         kdj_gc = macd_gc = False
+        kdj_dc = macd_dc = False
 
         if kl is not None and not kl.empty:
             closes = kl["close"].to_numpy(dtype=float)
@@ -382,7 +383,9 @@ def compute_indicators(
                 highs = kl["high"].to_numpy(dtype=float)
                 lows = kl["low"].to_numpy(dtype=float)
                 kdj_gc = _calc_kdj_golden_cross_arr(highs, lows, closes)
+                kdj_dc = _calc_kdj_death_cross_arr(highs, lows, closes)
             macd_gc = _calc_macd_golden_cross_arr(closes)
+            macd_dc = _calc_macd_death_cross_arr(closes)
 
         mcap = rt_mcaps[done]
         mcap_yi = round(float(mcap) / 1e8, 2) if pd.notna(mcap) else None
@@ -445,6 +448,8 @@ def compute_indicators(
             "60日最大日波幅": amp_60_max,
             "KDJ金叉": kdj_gc,
             "MACD金叉": macd_gc,
+            "KDJ死叉": kdj_dc,
+            "MACD死叉": macd_dc,
         })
         if progress_callback and done % 50 == 0:
             progress_callback(done, total, f"指标计算: {done}/{total}")
@@ -483,6 +488,30 @@ def _calc_kdj_golden_cross_arr(highs: np.ndarray, lows: np.ndarray, closes: np.n
     return gold
 
 
+def _calc_kdj_death_cross_arr(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray) -> bool:
+    """Calculate KDJ death cross (K line crosses below D line)."""
+    n = closes.size
+    if n < 9:
+        return False
+    h9 = pd.Series(highs).rolling(9, min_periods=9).max().to_numpy()
+    l9 = pd.Series(lows).rolling(9, min_periods=9).min().to_numpy()
+    denom = h9 - l9
+    rsv = np.where(denom == 0, 50.0, (closes - l9) / denom * 100.0)
+    k = 50.0
+    d = 50.0
+    death = False
+    for i in range(8, n):
+        prev_k, prev_d = k, d
+        k = (rsv[i] + 2.0 * prev_k) / 3.0
+        d = (k + 2.0 * prev_d) / 3.0
+        if i >= 9:
+            if prev_k >= prev_d and k < d:
+                death = True
+            elif prev_k <= prev_d and k > d:
+                death = False
+    return death
+
+
 def _calc_macd_golden_cross_arr(closes: np.ndarray) -> bool:
     """Numpy-vectorized MACD golden cross (EMA12/26 + DEA9)."""
     n = closes.size
@@ -509,6 +538,34 @@ def _calc_macd_golden_cross_arr(closes: np.ndarray) -> bool:
             elif prev_dif >= prev_dea and dif < dea:
                 gold = False
     return gold
+
+
+def _calc_macd_death_cross_arr(closes: np.ndarray) -> bool:
+    """Calculate MACD death cross (DIF crosses below DEA)."""
+    n = closes.size
+    if n < 26:
+        return False
+    ema12 = closes[0]
+    ema26 = closes[0]
+    dif = 0.0
+    dea = 0.0
+    death = False
+    for i in range(n):
+        c = closes[i]
+        ema12 = ema12 * 11.0 / 13.0 + c * 2.0 / 13.0
+        ema26 = ema26 * 25.0 / 27.0 + c * 2.0 / 27.0
+        prev_dif, prev_dea = dif, dea
+        dif = ema12 - ema26
+        if i == 0:
+            dea = dif
+        else:
+            dea = dea * 8.0 / 10.0 + dif * 2.0 / 10.0
+        if i >= 1:
+            if prev_dif >= prev_dea and dif < dea:
+                death = True
+            elif prev_dif <= prev_dea and dif > dea:
+                death = False
+    return death
 
 
 _INDICES = {
@@ -801,8 +858,14 @@ def run_pipeline(
                     ikl["low"].to_numpy(dtype=float),
                     closes,
                 )
+                kdj_dc = _calc_kdj_death_cross_arr(
+                    ikl["high"].to_numpy(dtype=float),
+                    ikl["low"].to_numpy(dtype=float),
+                    closes,
+                )
             if n >= 26:
                 macd_gc = _calc_macd_golden_cross_arr(closes)
+                macd_dc = _calc_macd_death_cross_arr(closes)
         index_rows.append({
             "代码": icode, "名称": ir["名称"], "最新价": ir["最新价"],
             "涨跌幅": ir["涨跌幅"],
@@ -812,6 +875,7 @@ def run_pipeline(
             "5日平均成交量(万手)": None, "5日最高换手率": None, "5日最低换手率": None,
             "30日平均成交量(万手)": None, "20日最高换手率": None, "20日最低换手率": None,
             "KDJ金叉": kdj_gc, "MACD金叉": macd_gc,
+            "KDJ死叉": kdj_dc, "MACD死叉": macd_dc,
         })
     index_df = pd.DataFrame(index_rows)
 

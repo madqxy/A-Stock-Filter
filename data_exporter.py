@@ -67,7 +67,7 @@ def _to_display_df(df: pd.DataFrame, map_yn: bool = False) -> pd.DataFrame:
     drop.extend(amp_cols)
     ddf = ddf.drop(columns=drop)
     if map_yn:
-        for c in ["KDJ金叉", "MACD金叉"]:
+        for c in ["KDJ金叉", "MACD金叉", "KDJ死叉", "MACD死叉"]:
             if c in ddf.columns:
                 ddf[c] = ddf[c].map(lambda x: "是" if x else "否")
     return ddf
@@ -209,15 +209,15 @@ def filter_stocks(
         mult = criteria.get("volume_multiplier", 1.5)
         ma_win = criteria.get("ma_window", 20)
         ma_col = f"{ma_win}日均价"
-        stock_df = stock_df.dropna(subset=["最新价", "5日均价", ma_col, "最新成交量(万手)", "5日平均成交量(万手)", "涨跌幅"])
-        # 止涨: MA5 was > MA20 (uptrend) but now MA5 < MA20 (reversal)
+        stock_df = stock_df.dropna(subset=["最新价", "5日均价", ma_col, "最新成交量(万手)", "5日平均成交量(万手)", "涨跌幅", "KDJ死叉", "MACD死叉"])
+        # 止涨: KDJ死叉 OR MACD死叉 (见顶信号)
         # 放量: volume > multiplier * avg
         # 下跌: price < MA and change < 0
-        cond = (stock_df["5日均价"] < stock_df[ma_col]) \
+        cond = (stock_df["KDJ死叉"] | stock_df["MACD死叉"]) \
                & (stock_df["最新价"] < stock_df[ma_col]) \
                & (stock_df["涨跌幅"] < 0) \
                & (stock_df["最新成交量(万手)"] > stock_df["5日平均成交量(万手)"] * mult)
-        msg = f"止涨放量下跌(MA5<MA{ma_win}+价<MA+跌幅<0+量>{mult}倍均量)"
+        msg = f"止涨放量下跌(死叉+价<MA+跌幅<0+量>{mult}倍均量)"
     else:
         raise ValueError(f"Unknown filter type: {ftype}")
 
