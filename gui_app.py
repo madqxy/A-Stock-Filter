@@ -334,6 +334,15 @@ class StockAnalyzerApp:
         }
         golden_mode_display_to_value = {v: k for k, v in golden_mode_options.items()}
         
+        # Death cross mode options for dropdown
+        death_cross_mode_options = {
+            "双死叉": "both",
+            "单死叉": "either",
+            "KDJ死叉": "kdj",
+            "MACD死叉": "macd",
+        }
+        death_cross_mode_display_to_value = {v: k for k, v in death_cross_mode_options.items()}
+        
         # Boolean options for dropdown
         bool_options = {
             "是": True,
@@ -410,6 +419,20 @@ class StockAnalyzerApp:
                 )
                 combo.grid(row=row, column=1, pady=5, padx=5)
                 param_vars[key] = (var, golden_mode_options)
+            elif key == "death_cross_mode":
+                # Use dropdown for death_cross_mode
+                var = tk.StringVar()
+                current_display = death_cross_mode_display_to_value.get(val, "单死叉")
+                var.set(current_display)
+                combo = ttk.Combobox(
+                    frame, 
+                    textvariable=var, 
+                    values=list(death_cross_mode_options.keys()),
+                    state="readonly",
+                    width=18
+                )
+                combo.grid(row=row, column=1, pady=5, padx=5)
+                param_vars[key] = (var, death_cross_mode_options)
             elif key == "require_downtrend":
                 # Use dropdown for boolean
                 var = tk.StringVar()
@@ -494,6 +517,7 @@ class StockAnalyzerApp:
             "volume_ratio": "缩量倍数",
             "golden_mode": "金叉模式",
             "require_downtrend": "要求下跌趋势",
+            "death_cross_mode": "死叉模式",
         }
         return labels.get(key, key)
 

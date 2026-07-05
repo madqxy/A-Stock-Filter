@@ -56,6 +56,8 @@ def _run_cli():
     parser.add_argument("--vs-index", type=str, help="对比基准 (csi300, csi1000, sh000001, sz399001)")
     parser.add_argument("--fluctuation-pct", type=float, help="波幅上限%% (如 3.0)")
     parser.add_argument("--volume-ratio", type=float, help="缩量倍数 (如 0.8, 最新量/均量)")
+    parser.add_argument("--death-cross-mode", type=str, choices=["both", "either", "kdj", "macd"],
+                       help="死叉模式 (both=双死叉, either=单死叉, kdj=KDJ死叉, macd=MACD死叉)")
     
     args = parser.parse_args()
 
@@ -139,6 +141,8 @@ def _run_cli():
         default_criteria["fluctuation_pct"] = args.fluctuation_pct
     if args.volume_ratio is not None:
         default_criteria["volume_ratio"] = args.volume_ratio
+    if args.death_cross_mode is not None:
+        default_criteria["death_cross_mode"] = args.death_cross_mode
     
     print(f"\n[筛选] {filter_type}")
     filtered = filter_stocks(result["all_data"], default_criteria)

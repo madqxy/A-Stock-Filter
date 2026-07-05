@@ -22,7 +22,7 @@ FILTER_REGISTRY: dict[str, tuple[str, dict]] = {
     "均线多头排列":      ("ma_bullish",                    {"type": "ma_bullish", "ma_short": 5, "ma_medium": 20, "ma_long": 60, "vs_index": "csi300"}),
     "放量突破":          ("volume_breakout",               {"type": "volume_breakout", "volume_multiplier": 1.5, "ma_window": 20, "vs_index": "csi300"}),
     "止跌缩量":          ("stabilize_volume_shrink",       {"type": "stabilize_volume_shrink", "pe_max": 30, "ma_window": 20, "window": 10, "fluctuation_pct": 3.0, "volume_ratio": 0.8, "require_downtrend": False}),
-    "止涨放量下跌":      ("stall_volume_drop",             {"type": "stall_volume_drop", "volume_multiplier": 1.5, "ma_window": 20}),
+    "止涨放量下跌":      ("stall_volume_drop",             {"type": "stall_volume_drop", "volume_multiplier": 1.5, "ma_window": 20, "death_cross_mode": "either"}),
 }
 
 DEFAULT_FILTER_NAME = "右侧买入"
@@ -210,16 +210,30 @@ def filter_stocks(
     elif ftype == "stall_volume_drop":
         mult = criteria.get("volume_multiplier", 1.5)
         ma_win = criteria.get("ma_window", 20)
+        death_mode = criteria.get("death_cross_mode", "either")
         ma_col = f"{ma_win}日均价"
         stock_df = stock_df.dropna(subset=["最新价", "5日均价", ma_col, "最新成交量(万手)", "5日平均成交量(万手)", "涨跌幅", "KDJ死叉", "MACD死叉"])
-        # 止涨: KDJ死叉 OR MACD死叉 (见顶信号)
+        # Death cross condition based on mode
+        if death_mode == "both":
+            death_cond = stock_df["KDJ死叉"] & stock_df["MACD死叉"]
+            death_desc = "双死叉"
+        elif death_mode == "kdj":
+            death_cond = stock_df["KDJ死叉"]
+            death_desc = "KDJ死叉"
+        elif death_mode == "macd":
+            death_cond = stock_df["MACD死叉"]
+            death_desc = "MACD死叉"
+        else:  # either
+            death_cond = stock_df["KDJ死叉"] | stock_df["MACD死叉"]
+            death_desc = "单死叉"
+        # 止涨: death cross (见顶信号)
         # 放量: volume > multiplier * avg
         # 下跌: price < MA and change < 0
-        cond = (stock_df["KDJ死叉"] | stock_df["MACD死叉"]) \
+        cond = death_cond \
                & (stock_df["最新价"] < stock_df[ma_col]) \
                & (stock_df["涨跌幅"] < 0) \
                & (stock_df["最新成交量(万手)"] > stock_df["5日平均成交量(万手)"] * mult)
-        msg = f"止涨放量下跌(死叉+价<MA+跌幅<0+量>{mult}倍均量)"
+        msg = f"止涨放量下跌({death_desc}+价<MA+跌幅<0+量>{mult}倍均量)"
     else:
         raise ValueError(f"Unknown filter type: {ftype}")
 
