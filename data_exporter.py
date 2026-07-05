@@ -62,9 +62,11 @@ def _to_display_df(df: pd.DataFrame, map_yn: bool = False) -> pd.DataFrame:
             lambda r: f"{r['10日最高换手率']:.2f}/{r['10日最低换手率']:.2f}"
             if pd.notna(r["10日最高换手率"]) else "", axis=1)
     drop = [c for c in cols_5 + cols_10 + cols_20 + cols_30 + cols_60 if c in ddf.columns]
-    # Also drop amplitude columns (used for filtering only)
+    # Also drop amplitude columns and volume MA columns (used for filtering only)
     amp_cols = [c for c in ddf.columns if "日最大日波幅" in c]
+    vol_ma_cols = [c for c in ddf.columns if "平均成交量" in c]
     drop.extend(amp_cols)
+    drop.extend(vol_ma_cols)
     ddf = ddf.drop(columns=drop)
     if map_yn:
         for c in ["KDJ金叉", "MACD金叉", "KDJ死叉", "MACD死叉"]:
