@@ -34,7 +34,7 @@ python main.py --cli --filter 止跌缩量 --require-downtrend true
 python main.py --cli --volume-multiplier 1.8 --pe-max 180 --vs-index csi1000
 ```
 
-**Available parameters**: `--volume-multiplier`, `--pe-max`, `--window`, `--ma-window`, `--ma-short`, `--ma-medium`, `--ma-long`, `--vs-index`, `--filter`, `--fluctuation-pct`, `--volume-ratio`, `--require-downtrend`, `--golden-mode`
+**Available parameters**: `--volume-multiplier`, `--pe-max`, `--window`, `--ma-window`, `--ma-short`, `--ma-medium`, `--ma-long`, `--vs-index`, `--filter`, `--fluctuation-pct`, `--volume-ratio`, `--require-downtrend`, `--golden-mode`, `--death-cross-mode`
 
 ## Pipeline (5 Stages)
 
@@ -43,7 +43,7 @@ python main.py --cli --volume-multiplier 1.8 --pe-max 180 --vs-index csi1000
 | **1. 股票清单** | Fetch ~5500 A-share codes | `akshare.stock_info_a_code_name()` |
 | **2. 实时行情** | Realtime quotes + ST/退市/市值<80亿 filter | Tencent batch API (`qt.gtimg.cn`) |
 | **3. 历史K线** | ~168 trading days daily K-line, batch mode (4 workers + 0.1s delay) | Tencent HTTP direct (`web.ifzq.gtimg.cn`) |
-| **4. 指标计算** | MA5/10/20/60/120, volume MA (万手), turnover extremes (5/10/20/30/60日), daily amplitude (5/10/20/30/60日), KDJ/MACD golden cross, total shares caching | Computed from K-line + realtime |
+| **4. 指标计算** | MA5/10/20/60/120, volume MA (万手), turnover extremes (5/10/20/30/60日), daily amplitude (5/10/20/30/60日), KDJ/MACD golden/death cross, total shares caching | Computed from K-line + realtime |
 | **5. 筛选导出** | Apply filter (customizable parameters) + export to Excel | |
 
 **第二运行** (cached): 跳过已缓存数据,仅补最新交易日。盘中拉取的数据闭市后自动重新拉取收盘价。
@@ -58,7 +58,7 @@ python main.py --cli --volume-multiplier 1.8 --pe-max 180 --vs-index csi1000
 | **均线多头排列** | MA短期 > MA中期 > MA长期, 跑赢大盘 | 短/中/长期均线天数, 对比基准 |
 | **放量突破** | 价>MA, 量>N倍均量, 跑赢大盘 | 放量倍数, 均线周期, 对比基准 |
 | **止跌缩量** | 盈利(PE>0且<上限), 止跌(N日波幅<阈值), 缩量(量<倍数×均量), 可选要求下跌趋势 | 市盈率上限, 均线周期, 时间窗口, 波幅上限, 缩量倍数, 要求下跌趋势(是/否) |
-| **止涨放量下跌** | KDJ/MACD死叉(见顶), 价<MA, 跌幅<0, 量>N倍均量(放量下跌) | 放量倍数, 均线周期 |
+| **止涨放量下跌** | KDJ/MACD死叉(见顶,可配置模式), 价<MA, 跌幅<0, 量>N倍均量(放量下跌) | 放量倍数, 均线周期, 死叉模式(双/单/KDJ/MACD) |
 
 **对比基准选项**: 沪深300, 中证500, 中证1000, 上证指数, 深证成指, 科创50, 创业板指数
 
@@ -71,7 +71,7 @@ python main.py --cli --volume-multiplier 1.8 --pe-max 180 --vs-index csi1000
 | `5/10/20/60/120日均价` | Moving averages (daily bars) |
 | `市盈率(TTM)`, `市值(亿)` | PE ratio, market cap (100M yuan) |
 | `最新成交量(万手)` | Volume (10k lots, 1万手=10,000手) |
-| `5/30日平均成交量(万手)` | Avg volume (10k lots) |
+| `5/30日平均成交量(万手)` | Avg volume (10k lots, computed for filtering, hidden from display) |
 | `最新换手率` | Turnover rate % |
 | `5/10日换手率(高/低)` | Turnover rate extremes (displayed) |
 | `20/30/60日最高换手率`, `20/30/60日最低换手率` | Turnover rate extremes (computed, for filtering) |
@@ -161,6 +161,23 @@ pytest tests/     # 47 tests
 | **Dropdowns** | vs_index, window, ma_window, ma_short/medium/long, golden_mode, require_downtrend |
 | **Text inputs** | volume_multiplier, pe_max, fluctuation_pct, volume_ratio |
 | **Removed invalid options** | ma_period dropdown no longer includes 30天 (we don't calculate MA30) |
+
+## Recent Improvements (2026-07-02)
+
+### KDJ/MACD 死叉信号
+
+| Change | Description |
+|---|---|
+| **死叉计算** | 新增 KDJ死叉、MACD死叉 指标计算 |
+| **止涨放量下跌** | 使用死叉信号替代 MA5<MA20，更准确的见顶判断 |
+| **死叉模式配置** | 支持 4 种模式：双死叉(both)、单死叉(either)、KDJ死叉(kdj)、MACD死叉(macd) |
+
+### GUI 优化
+
+| Change | Description |
+|---|---|
+| **精简显示列** | 从 GUI 隐藏 5日/30日平均成交量列，后台计算保留用于筛选 |
+| **参数修复** | ma_window 下拉菜单移除 30天选项（不计算 MA30） |
 
 ## Recent Improvements (2026-07-01)
 
