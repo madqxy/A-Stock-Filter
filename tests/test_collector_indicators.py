@@ -48,6 +48,22 @@ def test_turnover_extremes_calculated():
     assert df.iloc[0]["5日最低换手率"] is not None
 
 
+def test_turnover_extremes_value_no_unit_bug():
+    """Realtime volume is already in 股; total_shares must NOT be scaled 100x.
+
+    realtime 成交量 = 1_000_000 股, 换手率 = 1.0%  =>  total_shares = 1e8 股
+    K-line volume = 1_000_000 手 = 1e8 股 per day    =>  turnover = 100.0%
+    """
+    rt = pd.DataFrame({"代码": ["000001"], "名称": ["A"], "最新价": [10.0],
+                       "涨跌幅": [1.0], "成交量": [1_000_000.0],
+                       "换手率": [1.0], "市盈率-动态": [5.0], "市值": [1e9]})
+    kline_map = {"000001": _make_kline(30)}
+    df = compute_indicators(rt, kline_map)
+    row = df.iloc[0]
+    assert row["5日最高换手率"] == 100.0
+    assert row["5日最低换手率"] == 100.0
+
+
 def test_empty_kline_returns_na_indicators():
     rt = pd.DataFrame({"代码": ["000001"], "名称": ["A"], "最新价": [10.0],
                        "涨跌幅": [1.0], "成交量": [None], "换手率": [None],

@@ -3,8 +3,9 @@
 Run: python diagnose_kline.py
 """
 import time
+from datetime import timedelta
 import akshare as ak
-from data_collector import _fetch_kline_one, _market_prefix
+from data_collector import _fetch_kline_one, _market_prefix, _now_cst, _KLINE_FETCH_WIDE_DAYS
 
 SAMPLE_CODES = [
     "000001", "600519", "000858", "601398", "000333",
@@ -28,7 +29,8 @@ def main():
     for i, code in enumerate(SAMPLE_CODES, 1):
         start = time.perf_counter()
         try:
-            df = _fetch_kline_one(code)
+            start_date = (_now_cst() - timedelta(days=_KLINE_FETCH_WIDE_DAYS)).strftime("%Y%m%d")
+            df = _fetch_kline_one(code, start_date)
             elapsed = time.perf_counter() - start
             if df.empty:
                 fail += 1

@@ -50,6 +50,10 @@ _MIGRATIONS = [
     "ALTER TABLE kline ADD COLUMN is_index INTEGER NOT NULL DEFAULT 0",
 ]
 
+# Schema/user data version. Bump when a data fix requires invalidation of
+# cached rows (see _init_db migration logic).
+_SCHEMA_VERSION = 2
+
 
 class StockCache:
     def __init__(self, base_dir: Path | str):
@@ -112,11 +116,6 @@ class StockCache:
         t = now.hour * 60 + now.minute
         return (570 <= t <= 690) or (780 <= t <= 900)
 
-    @staticmethod
-    def market_today_close() -> datetime:
-        """Return today's 15:00 CST as a tz-aware datetime."""
-        return _now_cst().replace(hour=15, minute=0, second=0, microsecond=0)
-
     # ------------------------------------------------------------------
     # Init
     # ------------------------------------------------------------------
@@ -130,6 +129,12 @@ class StockCache:
                 except sqlite3.OperationalError as e:
                     if "duplicate column name" not in str(e).lower():
                         raise
+            # v1 -> v2: total_shares were computed with a 100x unit bug,
+            # invalidate cached values so they get recomputed correctly.
+            version = conn.execute("PRAGMA user_version").fetchone()[0]
+            if version < 2:
+                conn.execute("DELETE FROM stock_info")
+                conn.execute("PRAGMA user_version = 2")
             conn.commit()
 
     # ------------------------------------------------------------------
@@ -350,30 +355,6 @@ class StockCache:
                 params,
             )
             return {row[0] for row in cur.fetchall()}
-
-    def cached_weeks(self) -> int:
-        """Count distinct ISO weeks in the stock (non-index) K-line cache.
-
-        Used by the pipeline to decide whether a wide initial fetch is needed
-        to populate long-period weekly MAs (e.g. 24周均价).
-        """
-        with self._lock:
-            cur = self._get_conn().execute(
-                "SELECT MIN(date), MAX(date) FROM kline WHERE is_index = 0"
-            )
-            row = cur.fetchone()
-        if not row or not row[0] or not row[1]:
-            return 0
-        try:
-            d_min = datetime.strptime(row[0], "%Y-%m-%d").date()
-            d_max = datetime.strptime(row[1], "%Y-%m-%d").date()
-        except ValueError:
-            return 0
-        iso_min = d_min.isocalendar()
-        iso_max = d_max.isocalendar()
-        # Rough week-delta; ISO year rollover is handled by counting total weeks.
-        weeks = (iso_max[0] - iso_min[0]) * 52 + (iso_max[1] - iso_min[1]) + 1
-        return max(0, weeks)
 
     def max_kline_date_per_code(
         self, codes: list[str], include_index: bool = False

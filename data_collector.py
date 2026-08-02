@@ -8,7 +8,7 @@ Stage 4: compute_indicators — MA20/60/120, volume MA, turnover extremes
 Stage 5: handled by data_exporter
 """
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Callable, Optional
 import time
 
@@ -29,6 +29,14 @@ _KLINE_COLS = ["date", "open", "close", "high", "low", "volume"]
 # We fetch up to ~168 bars per request (Tencent API limit).
 # First run uses a wide date range to ensure enough data; incremental runs add bars over time.
 _KLINE_FETCH_WIDE_DAYS = 200   # first run: covers ~140 trading days
+
+
+_CST = timezone(timedelta(hours=8))
+
+
+def _now_cst() -> datetime:
+    """Current wall-clock time in China Standard Time (UTC+8), tz-aware."""
+    return datetime.now(_CST)
 
 
 def get_stock_list(progress_callback: ProgressCB = None) -> list[str]:
@@ -56,7 +64,7 @@ def _fetch_realtime_tencent(codes: list[str]) -> pd.DataFrame:
         batch = codes[i:i + 100]
         syms = ",".join(f"{_market_prefix(c)}{c}" for c in batch)
         try:
-            r = requests.get(f"http://qt.gtimg.cn/q={syms}", timeout=10)
+            r = requests.get(f"https://qt.gtimg.cn/q={syms}", timeout=10)
             for line in r.text.strip().split(";"):
                 line = line.strip()
                 if not line or "=" not in line:
@@ -180,9 +188,9 @@ def _fetch_kline_one(code: str, start_date: str) -> pd.DataFrame:
     """
     sym = f"{_market_prefix(code)}{code}"
     sd = f"{start_date[:4]}-{start_date[4:6]}-{start_date[6:]}"
-    ed = datetime.now().strftime("%Y-%m-%d")
+    ed = _now_cst().strftime("%Y-%m-%d")
     url = (
-        f"http://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
+        f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
         f"?param={sym},day,{sd},{ed},300,qfq"
     )
     r = _http_session().get(url, timeout=10)
@@ -311,7 +319,6 @@ def compute_indicators(
         if kl is not None and not kl.empty:
             closes = kl["close"].to_numpy(dtype=float)
             amounts = kl["volume"].to_numpy(dtype=float)
-            dates = kl["date"].to_numpy()
             n = closes.size
 
             if n >= 5:   ma5   = round(float(closes[-5:].mean()), 2)
@@ -338,9 +345,9 @@ def compute_indicators(
             total_shares = total_shares_cache.get(code)
             
             # If not in cache, calculate from realtime data
-            # realtime volume is in 手, convert to 股 for total_shares calculation
+            # realtime volume is already in 股 (converted in _fetch_realtime_tencent)
             if total_shares is None and pd.notna(turnover) and pd.notna(volume) and float(turnover) > 0:
-                volume_shares = float(volume) * 100  # 手 -> 股
+                volume_shares = float(volume)  # 股
                 total_shares = volume_shares / (float(turnover) / 100.0)  # 股
                 total_shares_to_save[code] = total_shares
             
@@ -382,8 +389,7 @@ def compute_indicators(
             if "high" in kl.columns and "low" in kl.columns:
                 highs = kl["high"].to_numpy(dtype=float)
                 lows = kl["low"].to_numpy(dtype=float)
-                kdj_gc = _calc_kdj_golden_cross_arr(highs, lows, closes)
-                kdj_dc = _calc_kdj_death_cross_arr(highs, lows, closes)
+                kdj_gc, kdj_dc = _calc_kdj_crosses_arr(highs, lows, closes)
             macd_gc = _calc_macd_golden_cross_arr(closes)
             macd_dc = _calc_macd_death_cross_arr(closes)
 
@@ -464,18 +470,21 @@ def compute_indicators(
     return pd.DataFrame(rows)
 
 
-def _calc_kdj_golden_cross_arr(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray) -> bool:
-    """Numpy-vectorized KDJ (standard A-share SMA form). Used by compute_indicators."""
+def _calc_kdj_crosses_arr(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray) -> tuple[bool, bool]:
+    """KDJ K/D series (standard A-share SMA form), returning (golden_cross, death_cross).
+
+    Numpy-vectorized rolling 9-period RSV; used by compute_indicators.
+    """
     n = closes.size
     if n < 9:
-        return False
+        return False, False
     h9 = pd.Series(highs).rolling(9, min_periods=9).max().to_numpy()
     l9 = pd.Series(lows).rolling(9, min_periods=9).min().to_numpy()
     denom = h9 - l9
     rsv = np.where(denom == 0, 50.0, (closes - l9) / denom * 100.0)
     k = 50.0
     d = 50.0
-    gold = False
+    gold = death = False
     for i in range(8, n):
         prev_k, prev_d = k, d
         k = (rsv[i] + 2.0 * prev_k) / 3.0
@@ -485,31 +494,11 @@ def _calc_kdj_golden_cross_arr(highs: np.ndarray, lows: np.ndarray, closes: np.n
                 gold = True
             elif prev_k >= prev_d and k < d:
                 gold = False
-    return gold
-
-
-def _calc_kdj_death_cross_arr(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray) -> bool:
-    """Calculate KDJ death cross (K line crosses below D line)."""
-    n = closes.size
-    if n < 9:
-        return False
-    h9 = pd.Series(highs).rolling(9, min_periods=9).max().to_numpy()
-    l9 = pd.Series(lows).rolling(9, min_periods=9).min().to_numpy()
-    denom = h9 - l9
-    rsv = np.where(denom == 0, 50.0, (closes - l9) / denom * 100.0)
-    k = 50.0
-    d = 50.0
-    death = False
-    for i in range(8, n):
-        prev_k, prev_d = k, d
-        k = (rsv[i] + 2.0 * prev_k) / 3.0
-        d = (k + 2.0 * prev_d) / 3.0
-        if i >= 9:
             if prev_k >= prev_d and k < d:
                 death = True
             elif prev_k <= prev_d and k > d:
                 death = False
-    return death
+    return gold, death
 
 
 def _calc_macd_golden_cross_arr(closes: np.ndarray) -> bool:
@@ -572,67 +561,98 @@ _INDICES = {
     "上证指数": "000001",
     "深证成指": "399001",
     "沪深300": "000300",
+    "中证500": "000905",
     "中证1000": "000852",
+    "科创50": "000688",
+    "创业板指数": "399006",
 }
 
 
+def _index_prefix(code: str) -> str:
+    """指数市场前缀: 深证系列 (399xxx) → sz, 其它 → sh."""
+    return "sz" if code.startswith("399") else "sh"
+
+
 def get_index_quotes(progress_callback: ProgressCB = None) -> pd.DataFrame:
-    """Fetch 4 major indices realtime quotes. Tries EM first, then Sina fallback."""
-    _SOURCES = [
-        ("EM", lambda: ak.stock_zh_index_spot_em(symbol="沪深重要指数")),
-        ("Sina", lambda: ak.stock_zh_index_spot()),
-    ]
-    for src_name, src_fn in _SOURCES:
-        for attempt in range(2):
-            try:
-                df = src_fn()
-                rows = []
-                for name, code in _INDICES.items():
-                    match = df[df["代码"] == code]
-                    if match.empty:
-                        continue
-                    r = match.iloc[0]
-                    rows.append({
-                        "名称": f"[指数] {name}",
-                        "代码": code,
-                        "最新价": float(r.get("最新价") or 0),
-                        "涨跌幅": float(r.get("涨跌幅") or 0),
-                        "成交量": None, "换手率": None, "市盈率-动态": None, "市值": None,
-                    })
-                if rows:
-                    if progress_callback:
-                        progress_callback(len(rows), len(rows), f"指数行情: {len(rows)} 个")
-                    return pd.DataFrame(rows)
-                break
-            except Exception:
-                if attempt < 1:
-                    time.sleep(0.5)
-    print("[WARN] get_index_quotes failed — both EM and Sina unavailable")
-    return pd.DataFrame()
+    """Fetch 7 major indices realtime quotes from the Tencent batch API.
+
+    Uses the same source as stock realtime quotes for consistency. No
+    akshare/EM/Sina dependency.
+    """
+    syms = ",".join(f"{_index_prefix(code)}{code}" for code in _INDICES.values())
+    try:
+        r = requests.get(f"https://qt.gtimg.cn/q={syms}", timeout=10)
+    except Exception as e:
+        print(f"[WARN] get_index_quotes failed: {e}")
+        return pd.DataFrame()
+    rows = []
+    for line in r.text.strip().split(";"):
+        line = line.strip()
+        if not line or "=" not in line:
+            continue
+        parts = line.split("=", 1)
+        m = __import__("re").search(r'\"(.+)\"', parts[1])
+        if not m:
+            continue
+        f = m.group(1).split("~")
+        if len(f) < 40:
+            continue
+        code = f[2].strip().zfill(6)
+        name = next((n for n, c in _INDICES.items() if c == code), f[1] if len(f) > 1 else code)
+        price = float(f[3]) if f[3] else None
+        chg = float(f[32]) if f[32] else None
+        if price is None:
+            continue
+        rows.append({
+            "名称": f"[指数] {name}",
+            "代码": code,
+            "最新价": price,
+            "涨跌幅": chg,
+            "成交量": None, "换手率": None, "市盈率-动态": None, "市值": None,
+        })
+    if not rows:
+        print("[WARN] get_index_quotes returned no rows")
+        return pd.DataFrame()
+    if progress_callback:
+        progress_callback(len(rows), len(rows), f"指数行情: {len(rows)} 个")
+    return pd.DataFrame(rows)
 
 
 def _fetch_index_kline_one(code: str, days: int) -> tuple[str, pd.DataFrame]:
-    last_exc = None
+    """Fetch daily K-line for an index via Tencent fqkline API (same as stocks)."""
+    sym = f"{_index_prefix(code)}{code}"
+    start = (_now_cst().date() - timedelta(days=days * 2)).strftime("%Y-%m-%d")
+    end = _now_cst().strftime("%Y-%m-%d")
+    url = (
+        f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
+        f"?param={sym},day,{start},{end},300,qfq"
+    )
     for attempt in range(3):
         try:
-            df = ak.stock_zh_index_daily_em(symbol=code)
-            if df is None or df.empty:
+            r = _http_session().get(url, timeout=10)
+            r.raise_for_status()
+            body = r.json().get("data", {}).get(sym)
+            if not body:
                 time.sleep(0.5)
                 continue
-            out = pd.DataFrame({
-                "date":   pd.to_datetime(df["date"]).dt.strftime("%Y-%m-%d"),
-                "open":   df["open"].astype(float),
-                "close":  df["close"].astype(float),
-                "high":   df["high"].astype(float),
-                "low":    df["low"].astype(float),
-                "volume": df["volume"].astype(float),
-            })
+            bars = body.get("qfqday") or body.get("day") or []
+            if not bars:
+                time.sleep(0.5)
+                continue
+            out = pd.DataFrame(
+                {
+                    "date":   [b[0] for b in bars],
+                    "open":   [float(b[1]) for b in bars],
+                    "close":  [float(b[2]) for b in bars],
+                    "high":   [float(b[3]) for b in bars],
+                    "low":    [float(b[4]) for b in bars],
+                    "volume": [float(b[5]) for b in bars],
+                }
+            )
             return code, out.tail(days).reset_index(drop=True)
-        except Exception as e:
-            last_exc = e
+        except Exception:
             if attempt < 2:
                 time.sleep(0.5 * (2 ** attempt))
-    print(f"[WARN] index kline {code} failed: {last_exc}")
     return code, pd.DataFrame(columns=_KLINE_COLS)
 
 
@@ -750,7 +770,7 @@ def run_pipeline(
                 # This stock has older data, fetch only new bars from next day
                 next_day = date.fromisoformat(md) + timedelta(days=1)
                 # Don't fetch if next_day is in the future
-                if next_day > date.today():
+                if next_day > _now_cst().date():
                     continue
                 fetch_plan[c] = next_day.strftime("%Y%m%d")
                 n_incr += 1
@@ -779,15 +799,12 @@ def run_pipeline(
         )
 
     if fetch_plan:
-        kline_map = get_kline_batch(
+        get_kline_batch(
             fetch_plan,
             progress_callback=progress_callback,
             max_workers=max_workers,
             on_success=lambda c, df: cache.save_kline(c, df, append_only=append_only),
         )
-        cache.save_kline_batch(kline_map, append_only=append_only)
-    else:
-        kline_map = {}
     stats["kline_count"] = len(cache.completed_codes())
     
     # 滚动清理：每只股票只保留最近200根K线（足够MA120计算）
@@ -800,6 +817,7 @@ def run_pipeline(
     # Always load from cache — cache has historical data + newly fetched bars
     # (saved via on_success callback during fetch). This ensures MA calculation
     # has full history even for stocks that only had 1 new bar fetched.
+    kline_map: dict[str, pd.DataFrame] = {}
     for c in codes:
         cached = cache.get_kline(c)
         if cached is not None and not cached.empty:
@@ -853,12 +871,7 @@ def run_pipeline(
             if n >= 60:  ma60  = round(float(closes[-60:].mean()), 2)
             if n >= 120: ma120 = round(float(closes[-120:].mean()), 2)
             if "high" in ikl.columns and "low" in ikl.columns and n >= 9:
-                kdj_gc = _calc_kdj_golden_cross_arr(
-                    ikl["high"].to_numpy(dtype=float),
-                    ikl["low"].to_numpy(dtype=float),
-                    closes,
-                )
-                kdj_dc = _calc_kdj_death_cross_arr(
+                kdj_gc, kdj_dc = _calc_kdj_crosses_arr(
                     ikl["high"].to_numpy(dtype=float),
                     ikl["low"].to_numpy(dtype=float),
                     closes,

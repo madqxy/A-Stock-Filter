@@ -484,14 +484,24 @@ class StockAnalyzerApp:
                     custom[key] = mapping[display_name]
                 else:
                     # Text entry for numeric values
-                    val = var_data.get()
+                    val = var_data.get().strip()
+                    if not val:
+                        messagebox.showwarning(
+                            "参数错误",
+                            f"参数「{self._param_label(key)}」不能为空",
+                        )
+                        return
                     try:
                         if "." in val:
                             custom[key] = float(val)
                         else:
                             custom[key] = int(val)
                     except ValueError:
-                        custom[key] = val
+                        messagebox.showwarning(
+                            "参数错误",
+                            f"参数「{self._param_label(key)}」必须是数字，当前值: {val!r}",
+                        )
+                        return
             self.custom_params[name] = custom
             self._log(f"已保存 {name} 的参数设置")
             dialog.destroy()

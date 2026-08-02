@@ -18,28 +18,34 @@ python main.py --cli --clear
 --filter FILTER_NAME
 ```
 
-可选值：
-- `volume_breakout_golden_profit` - 放量双金叉盈利（默认）
-- `turnover_above_max` - 当前换手率N日最高
-- `turnover_below_min` - 当前换手率N日最低
-- `right_corner_buy` - 右侧拐点买入
-- `ma_bullish` - 均线多头排列
-- `volume_breakout` - 放量突破
-- `kdj_golden` - KDJ金叉
-- `macd_golden` - MACD金叉
+可选值（支持中文名或英文类型名）：
+- `右侧买入` / `right_buy` - 右侧买入（默认）
+- `均线多头排列` / `ma_bullish` - 均线多头排列
+- `放量突破` / `volume_breakout` - 放量突破
+- `止跌缩量` / `stabilize_volume_shrink` - 止跌缩量
+- `止涨放量下跌` / `stall_volume_drop` - 止涨放量下跌
 
 ### 参数自定义
 
 | 参数 | 说明 | 默认值 | 适用筛选器 |
 |------|------|--------|-----------|
-| `--volume-multiplier N` | 放量倍数 | 1.5 | volume_* |
-| `--pe-max N` | 市盈率上限 | 200 | volume_breakout_golden_profit |
-| `--window N` | 时间窗口（日） | 20 | turnover_* |
-| `--ma-window N` | 均线周期（日） | 20 | volume_breakout, right_corner_buy |
+| `--volume-multiplier N` | 放量倍数 | 1.5 | right_buy, volume_breakout, stall_volume_drop |
+| `--pe-max N` | 市盈率上限 | 9999 / 30 | right_buy, stabilize_volume_shrink |
+| `--window N` | 时间窗口（日） | 10 | stabilize_volume_shrink |
+| `--ma-window N` | 均线周期（日） | 20 | volume_breakout, stabilize_volume_shrink, stall_volume_drop |
 | `--ma-short N` | 短期均线 | 5 | ma_bullish |
 | `--ma-medium N` | 中期均线 | 20 | ma_bullish |
 | `--ma-long N` | 长期均线 | 60 | ma_bullish |
 | `--vs-index INDEX` | 对比基准 | csi300 | 所有 |
+| `--fluctuation-pct N` | 波幅上限(%) | 3.0 | stabilize_volume_shrink |
+| `--volume-ratio N` | 缩量倍数 | 0.8 | stabilize_volume_shrink |
+| `--golden-mode MODE` | 金叉模式 | both | right_buy |
+| `--require-downtrend BOOL` | 要求下跌趋势 | false | stabilize_volume_shrink |
+| `--death-cross-mode MODE` | 死叉模式 | either | stall_volume_drop |
+
+`--golden-mode` 可选值：`both`（双金叉）/ `either`（单金叉）。
+`--require-downtrend` 可选值：`true` / `false`。
+`--death-cross-mode` 可选值：`both`（双死叉）/ `either`（单死叉）/ `kdj`（KDJ死叉）/ `macd`（MACD死叉）。
 
 ### 对比基准选项
 
@@ -61,28 +67,28 @@ python main.py --cli --clear
 python main.py --cli
 ```
 
-使用默认筛选器（放量双金叉盈利）和默认参数运行。
+使用默认筛选器（右侧买入）和默认参数运行。
 
 ### 示例2：自定义放量和PE
 
 ```bash
-python main.py --cli --volume-multiplier 2.0 --pe-max 150
+python main.py --cli --filter 右侧买入 --volume-multiplier 2.0 --pe-max 150
 ```
 
 筛选放量2倍以上、PE在0-150之间的股票。
 
-### 示例3：换手率筛选
+### 示例3：止跌缩量筛选
 
 ```bash
-python main.py --cli --filter turnover_above_max --window 30
+python main.py --cli --filter 止跌缩量 --window 30 --volume-ratio 0.6
 ```
 
-筛选当前换手率为30日最高的股票。
+筛选当前换手率/量能缩至30日均量60%以下、且止跌的股票。
 
 ### 示例4：均线多头
 
 ```bash
-python main.py --cli --filter ma_bullish --ma-short 10 --ma-medium 30 --ma-long 60
+python main.py --cli --filter 均线多头排列 --ma-short 10 --ma-medium 30 --ma-long 60
 ```
 
 筛选10日>30日>60日均线多头排列的股票。
@@ -98,10 +104,10 @@ python main.py --cli --vs-index csi1000
 ### 示例6：组合参数
 
 ```bash
-python main.py --cli --volume-multiplier 1.8 --pe-max 180 --vs-index csi1000
+python main.py --cli --filter 右侧买入 --volume-multiplier 1.8 --pe-max 180 --golden-mode either --vs-index csi1000
 ```
 
-组合多个参数：放量1.8倍、PE<180、跑赢中证1000。
+组合多个参数：放量1.8倍、PE<180、单金叉、跑赢中证1000。
 
 ### 示例7：清除缓存重新拉取
 

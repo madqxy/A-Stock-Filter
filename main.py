@@ -37,14 +37,17 @@ def _run_cli():
     from datetime import datetime, timezone, timedelta
     from cache import StockCache
     from data_collector import run_pipeline
-    from data_exporter import filter_stocks, export_to_excel, filter_export, FILTER_REGISTRY
+    from data_exporter import (
+        filter_stocks, export_to_excel, filter_export, FILTER_REGISTRY,
+        DEFAULT_FILTER_NAME, resolve_filter,
+    )
 
     parser = argparse.ArgumentParser(description="A股数据分析工具 - 命令行模式")
     parser.add_argument("--cli", action="store_true", help="运行命令行模式")
     parser.add_argument("--force-refresh", action="store_true", help="强制刷新所有 K 线数据")
     
     # Filter parameters
-    parser.add_argument("--filter", type=str, default="volume_breakout_golden_profit",
+    parser.add_argument("--filter", type=str, default=DEFAULT_FILTER_NAME,
                        help="筛选类型: " + ", ".join(k for k in FILTER_REGISTRY.keys()))
     parser.add_argument("--volume-multiplier", type=float, help="放量倍数 (如 1.5)")
     parser.add_argument("--pe-max", type=float, help="市盈率上限 (如 150)")
@@ -56,6 +59,10 @@ def _run_cli():
     parser.add_argument("--vs-index", type=str, help="对比基准 (csi300, csi1000, sh000001, sz399001)")
     parser.add_argument("--fluctuation-pct", type=float, help="波幅上限%% (如 3.0)")
     parser.add_argument("--volume-ratio", type=float, help="缩量倍数 (如 0.8, 最新量/均量)")
+    parser.add_argument("--golden-mode", type=str, choices=["both", "either"],
+                       help="金叉模式 (both=双金叉, either=单金叉)")
+    parser.add_argument("--require-downtrend", type=str, choices=["true", "false"],
+                       help="要求下跌趋势 (true/false)")
     parser.add_argument("--death-cross-mode", type=str, choices=["both", "either", "kdj", "macd"],
                        help="死叉模式 (both=双死叉, either=单死叉, kdj=KDJ死叉, macd=MACD死叉)")
     
@@ -105,20 +112,7 @@ def _run_cli():
     print(f"[导出] 全部数据: {all_path}")
 
     # Build filter criteria from command-line arguments
-    filter_type = args.filter
-    if filter_type not in [v[0] for v in FILTER_REGISTRY.values()]:
-        # Try to match by display name
-        for display_name, (ftype, _) in FILTER_REGISTRY.items():
-            if display_name == filter_type:
-                filter_type = ftype
-                break
-    
-    # Get default criteria for this filter
-    default_criteria = {}
-    for display_name, (ftype, criteria) in FILTER_REGISTRY.items():
-        if ftype == filter_type:
-            default_criteria = criteria.copy()
-            break
+    filter_type, default_criteria = resolve_filter(args.filter)
     
     # Override with command-line arguments
     if args.volume_multiplier is not None:
@@ -141,6 +135,10 @@ def _run_cli():
         default_criteria["fluctuation_pct"] = args.fluctuation_pct
     if args.volume_ratio is not None:
         default_criteria["volume_ratio"] = args.volume_ratio
+    if args.golden_mode is not None:
+        default_criteria["golden_mode"] = args.golden_mode
+    if args.require_downtrend is not None:
+        default_criteria["require_downtrend"] = args.require_downtrend.lower() == "true"
     if args.death_cross_mode is not None:
         default_criteria["death_cross_mode"] = args.death_cross_mode
     

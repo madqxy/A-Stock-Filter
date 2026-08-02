@@ -1,6 +1,33 @@
 import pandas as pd
 import pytest
-from data_exporter import filter_stocks
+from data_exporter import filter_stocks, resolve_filter, DEFAULT_FILTER_NAME
+
+
+def test_resolve_filter_by_display_name():
+    ftype, criteria = resolve_filter("右侧买入")
+    assert ftype == "right_buy"
+    assert criteria["type"] == "right_buy"
+
+
+def test_resolve_filter_by_internal_type():
+    ftype, criteria = resolve_filter("ma_bullish")
+    assert ftype == "ma_bullish"
+    assert criteria["type"] == "ma_bullish"
+
+
+def test_resolve_filter_unknown_falls_back_to_default():
+    ftype, criteria = resolve_filter("volume_breakout_golden_profit")
+    default_ftype = {"右侧买入": "right_buy"}[DEFAULT_FILTER_NAME]
+    assert ftype == default_ftype
+    assert criteria["type"] == default_ftype
+
+
+def test_resolve_filter_returns_copy_of_criteria():
+    _, criteria = resolve_filter("right_buy")
+    criteria["pe_max"] = 1
+    _, criteria2 = resolve_filter("right_buy")
+    assert criteria2["pe_max"] != 1
+
 
 
 def _df(include_csi300=True, include_stocks=True):

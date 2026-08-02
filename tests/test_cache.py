@@ -114,3 +114,26 @@ def test_clear(tmp_cache, sample_kline_df, sample_realtime_df):
     assert tmp_cache.completed_codes() == set()
     assert tmp_cache.load_realtime() is None
     assert tmp_cache.get_stock_list() == []
+
+
+def test_schema_migration_clears_poisoned_stock_info(tmp_path):
+    """Re-opening a v1 DB (user_version < 2) must invalidate stock_info,
+    since total_shares were cached with a 100x unit bug."""
+    cache = StockCache(base_dir=tmp_path)
+    cache.save_total_shares("000001", 1e10)
+    cache.close()
+    # Simulate an old DB that predates the v2 migration.
+    import sqlite3
+    conn = sqlite3.connect(tmp_path / "data" / "history.db")
+    conn.execute("PRAGMA user_version = 1")
+    conn.commit()
+    conn.close()
+
+    cache2 = StockCache(base_dir=tmp_path)
+    assert cache2.get_total_shares("000001") is None
+    cache2.close()
+
+    # And the version is now bumped so the migration is idempotent.
+    conn = sqlite3.connect(tmp_path / "data" / "history.db")
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == 2
+    conn.close()

@@ -47,12 +47,24 @@ def test_run_pipeline_uses_cache_on_second_run(tmp_path):
         "成交量": [1e6, 2e6], "换手率": [0.5, 0.8],
         "市盈率-动态": [5.0, 6.0], "市值": [9e9, 10e9],
     })
-    fake_index = pd.DataFrame({
-        "代码": ["000001", "399001", "000300", "000852"],
-        "名称": ["上证", "深证", "沪深300", "中证1000"],
-        "最新价": [3000.0, 10000.0, 3500.0, 6000.0],
-        "涨跌幅": [0.5, 1.0, -0.3, 0.2],
-    })
+    fake_index_rows = [
+        ("sh000001", "000001", "上证", "3000.0", "0.50"),
+        ("sz399001", "399001", "深证", "10000.0", "1.00"),
+        ("sh000300", "000300", "沪深300", "3500.0", "-0.30"),
+        ("sh000852", "000852", "中证1000", "6000.0", "0.20"),
+    ]
+
+    def fake_index_quotes_response():
+        lines = []
+        for sym, code, name, price, chg in fake_index_rows:
+            fields = ["1", name, code, price, "0"] * 8
+            fields[32] = chg
+            while len(fields) < 40:
+                fields.append("0")
+            lines.append(f'v_{sym}="{ "~".join(fields) }";')
+        resp = MagicMock()
+        resp.text = "".join(lines)
+        return resp
 
     call_count = {"stock_list": 0, "realtime": 0, "hist": 0}
 
@@ -63,15 +75,6 @@ def test_run_pipeline_uses_cache_on_second_run(tmp_path):
     def fake_realtime_fn(codes):
         call_count["realtime"] += 1
         return fake_realtime
-
-    def fake_index_spot(**kwargs):
-        return fake_index
-
-    def fake_index_daily(symbol):
-        return pd.DataFrame({
-            "date":  pd.date_range("2025-01-01", periods=130, freq="B"),
-            "open": 10.0, "close": 10.0, "high": 11.0, "low": 9.5, "volume": 1e6,
-        })
 
     mock_session = _make_mock_session()
 
@@ -85,10 +88,10 @@ def test_run_pipeline_uses_cache_on_second_run(tmp_path):
     with patch("data_collector.get_stock_list", side_effect=fake_stock_list), \
          patch("data_collector.get_realtime_quotes", side_effect=fake_realtime_fn), \
          patch("data_collector._http_session", return_value=counting_session), \
-         patch("data_collector.ak") as mock_ak:
-        mock_ak.stock_zh_index_spot_em.side_effect = fake_index_spot
-        mock_ak.stock_zh_index_daily_em.side_effect = fake_index_daily
+         patch("data_collector.requests.get",
+               return_value=fake_index_quotes_response()) as m_req:
         result = run_pipeline(cache, force_refresh=True)
+        assert m_req.call_args.args[0].startswith("https://qt.gtimg.cn/q=")
         assert len(result["all_data"]) == 4 + 2
         assert cache.completed_codes() == {"000001", "600000"}
 

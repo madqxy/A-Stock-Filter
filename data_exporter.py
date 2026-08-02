@@ -13,7 +13,6 @@ import pandas as pd
 _PCT_COLS = ["涨跌幅", "最新换手率", "5日换手率(高/低)", "20日换手率(高/低)"]
 _AMOUNT_COLS = ["市值(亿)", "最新成交量(万手)", "5日平均成交量(万手)", "30日平均成交量(万手)"]
 _PRICE_COLS = ["最新价", "5日均价", "10日均价", "20日均价", "60日均价", "120日均价"]
-_VOLUME_COLS: list[str] = []
 
 
 # Shared filter registry: display_name -> (internal_type, criteria_dict)
@@ -27,6 +26,19 @@ FILTER_REGISTRY: dict[str, tuple[str, dict]] = {
 
 DEFAULT_FILTER_NAME = "右侧买入"
 
+
+def resolve_filter(filter_type: str) -> tuple[str, dict]:
+    """Resolve a filter name (display name or internal type) to (ftype, criteria).
+
+    Falls back to DEFAULT_FILTER_NAME with a warning when the name is unknown.
+    """
+    for display_name, (ftype, criteria) in FILTER_REGISTRY.items():
+        if display_name == filter_type or ftype == filter_type:
+            return ftype, criteria.copy()
+    print(f"[WARN] 未知筛选器 '{filter_type}', 使用默认 '{DEFAULT_FILTER_NAME}'")
+    ftype, criteria = FILTER_REGISTRY[DEFAULT_FILTER_NAME]
+    return ftype, criteria.copy()
+
 def _build_format_map(df: pd.DataFrame) -> dict[str, str]:
     fmt: dict[str, str] = {}
     for c in df.columns:
@@ -36,8 +48,6 @@ def _build_format_map(df: pd.DataFrame) -> dict[str, str]:
             fmt[c] = '#,##0.00'
         elif c in _PRICE_COLS:
             fmt[c] = '0.00'
-        elif c in _VOLUME_COLS:
-            fmt[c] = '#,##0'
     return fmt
 
 
