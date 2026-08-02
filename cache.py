@@ -43,6 +43,10 @@ CREATE TABLE IF NOT EXISTS stock_info (
     total_shares REAL,
     updated_at   TEXT
 );
+
+CREATE TABLE IF NOT EXISTS trade_calendar (
+    trade_date TEXT PRIMARY KEY
+);
 """
 
 _MIGRATIONS = [
@@ -377,23 +381,49 @@ class StockCache:
             )
             return {row[0]: row[1] for row in cur.fetchall() if row[1]}
 
-    def latest_trade_date(self) -> _date:
-        """Latest (possibly today's) trading date in CST, weekend-aware.
+    def latest_trade_date(self, calendar: Optional[set[_date]] = None) -> _date:
+        """Latest (possibly today's) trading date in CST.
 
-        - Weekday + market closed (>= 15:00): returns today
+        - Weekday + market closed (>= 15:05): returns today
         - Weekday + market still open: returns previous weekday (intraday data incomplete)
         - Weekend: returns the previous Friday
-        - Does NOT account for public holidays; callers tolerate harmless empty fetches.
+        - With a `calendar` (set of trading days), also rolls back across public holidays.
+        - Without a `calendar`, only weekend-aware (callers tolerate empty fetches).
         """
         now = _now_cst()
         d = now.date()
+        # An empty/invalid calendar is treated as "no calendar" (weekend-only).
+        if calendar is not None and not calendar:
+            calendar = None
         # Market closes at 15:00 CST; before that today's bar is incomplete.
         if now.weekday() < 5 and not (now.hour > 15 or (now.hour == 15 and now.minute >= 5)):
             d = d - _td(days=1)
-        # Roll back weekends
-        while d.weekday() >= 5:
+        # Roll back weekends (and, if a calendar is given, non-trading days)
+        while True:
+            if calendar is None:
+                if d.weekday() < 5:
+                    break
+            else:
+                if d in calendar:
+                    break
             d = d - _td(days=1)
         return d
+
+    def save_trade_calendar(self, dates: list[_date]):
+        """Persist the set of A-share trading dates (YYYY-MM-DD)."""
+        with self._lock:
+            conn = self._get_conn()
+            conn.executemany(
+                "INSERT OR REPLACE INTO trade_calendar (trade_date) VALUES (?)",
+                [(d.isoformat(),) for d in dates],
+            )
+            conn.commit()
+
+    def load_trade_calendar(self) -> set[_date]:
+        """Return the cached trading dates as a set of `date` objects (empty if none)."""
+        with self._lock:
+            cur = self._get_conn().execute("SELECT trade_date FROM trade_calendar")
+            return {_date.fromisoformat(row[0]) for row in cur.fetchall()}
 
     # ------------------------------------------------------------------
     # Stock info (total shares, etc.)

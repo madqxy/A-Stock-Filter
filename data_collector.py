@@ -2,9 +2,9 @@
 A-stock data collection pipeline (5 stages).
 
 Stage 1: get_stock_list — list of A-share codes via akshare
-Stage 2: get_realtime_quotes — full-market realtime via akshare
-Stage 3: get_kline_batch — historical K-line per stock, parallel, cached
-Stage 4: compute_indicators — MA20/60/120, volume MA, turnover extremes
+Stage 2: get_realtime_quotes — full-market realtime via Tencent HTTP (qt.gtimg.cn)
+Stage 3: get_kline_batch — historical K-line per stock via Tencent HTTP, parallel, cached
+Stage 4: compute_indicators — MA20/60/120, volume MA, turnover extremes, KDJ/MACD crosses
 Stage 5: handled by data_exporter
 """
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -37,6 +37,27 @@ _CST = timezone(timedelta(hours=8))
 def _now_cst() -> datetime:
     """Current wall-clock time in China Standard Time (UTC+8), tz-aware."""
     return datetime.now(_CST)
+
+
+def get_trade_calendar(cache, force_refresh: bool = False) -> Optional[set[date]]:
+    """Return the cached A-share trading-day set, refetching from akshare when stale.
+
+    The calendar is persisted in the passed cache so it is fetched at most once per
+    year. Returns None (weekend-only fallback) if fetch fails and nothing is cached.
+    """
+    cached = cache.load_trade_calendar()
+    if not force_refresh and any(d.year == _now_cst().year for d in cached):
+        return cached
+    try:
+        df = ak.tool_trade_date_hist_sina()
+        dates = {pd.Timestamp(v).date() for v in df["trade_date"]}
+    except Exception as e:
+        print(f"[WARN] 获取交易日历失败, 回退周末判断: {e}")
+        return cached or None
+    if not dates:
+        return cached or None
+    cache.save_trade_calendar(sorted(dates))
+    return dates
 
 
 def get_stock_list(progress_callback: ProgressCB = None) -> list[str]:
@@ -733,8 +754,8 @@ def run_pipeline(
     _stage(3, 5, "阶段3: 历史 K 线")
     max_dates = cache.max_kline_date_per_code(codes)
     
-    # Get the latest trading day from calendar logic
-    latest_trade = cache.latest_trade_date()
+    # Get the latest trading day from calendar logic (holiday-aware)
+    latest_trade = cache.latest_trade_date(calendar=get_trade_calendar(cache))
     latest_trade_str = latest_trade.strftime("%Y-%m-%d")
     
     # Also check the actual max date in cache (handles holidays/special trading days)

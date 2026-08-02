@@ -87,6 +87,7 @@ def test_run_pipeline_uses_cache_on_second_run(tmp_path):
 
     with patch("data_collector.get_stock_list", side_effect=fake_stock_list), \
          patch("data_collector.get_realtime_quotes", side_effect=fake_realtime_fn), \
+         patch("data_collector.get_trade_calendar", return_value=set()), \
          patch("data_collector._http_session", return_value=counting_session), \
          patch("data_collector.requests.get",
                return_value=fake_index_quotes_response()) as m_req:
